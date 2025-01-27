@@ -26,7 +26,35 @@ export default function YapSpace() {
     adminMode: false,
     adminPassword: ''
   });
-
+  const CommentInput = ({ messageId, isPrivate, onSubmit }) => {
+    const [comment, setComment] = useState('');
+  
+    const handleSubmit = () => {
+      if (comment.trim()) {
+        onSubmit(messageId, comment, isPrivate);
+        setComment('');
+      }
+    };
+  
+    return (
+      <div className="mt-3 space-y-2">
+        <Textarea
+          placeholder="Write a comment..."
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          className="bg-gray-700 border-gray-600 text-gray-200 min-h-[80px]"
+        />
+        <Button
+          onClick={handleSubmit}
+          size="sm"
+          className="bg-teal-600 hover:bg-teal-700 w-full"
+        >
+          <Send className="w-4 h-4 mr-2" />
+          Post Comment
+        </Button>
+      </div>
+    );
+  };
   async function fetchComments(messageId, isPrivate = false) {
     const table = isPrivate ? 'private_comments' : 'comments';
     const { data, error } = await supabase
@@ -58,22 +86,21 @@ export default function YapSpace() {
     else await fetchUserPrivateMessages();
   }
 
-  async function postComment(messageId, isPrivate = false) {
-    if (!state.newComments[messageId]?.trim()) return;
-
+  async function postComment(messageId, content, isPrivate = false) {
+    if (!content?.trim()) return;
+  
     const table = isPrivate ? 'private_comments' : 'comments';
     const { error } = await supabase.from(table).insert({
       message_id: messageId,
       username: state.username || 'Anonymous',
-      content: state.newComments[messageId].trim(),
+      content: content.trim(),
     });
-
+  
     if (error) console.error(error);
     else await fetchComments(messageId, isPrivate);
-
+  
     setState(prev => ({
       ...prev,
-      newComments: { ...prev.newComments, [messageId]: '' },
       showCommentInput: { ...prev.showCommentInput, [messageId]: false }
     }));
   }
@@ -180,35 +207,22 @@ export default function YapSpace() {
         </div>
 
         {state.showCommentInput[msg.id] && (
-          <div className="mt-4 pl-12">
-            <div className="space-y-2">
-              {state.comments[msg.id]?.map((comment) => (
-                <div key={comment.id} className="bg-gray-700 rounded-lg p-3">
-                  <p className="font-medium text-sm text-teal-400">{comment.username}</p>
-                  <p className="text-sm text-gray-300">{comment.content}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 flex space-x-2">
-              <Input
-                placeholder="Write a comment..."
-                value={state.newComments[msg.id] || ''}
-                onChange={(e) => setState(prev => ({
-                  ...prev,
-                  newComments: { ...prev.newComments, [msg.id]: e.target.value }
-                }))}
-                className="flex-1 bg-gray-700 border-gray-600 text-gray-200"
-              />
-              <Button
-                onClick={() => postComment(msg.id, isPrivate)}
-                size="sm"
-                className="bg-teal-600 hover:bg-teal-700"
-              >
-                <Send className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        )}
+  <div className="mt-4 pl-12">
+    <div className="space-y-2">
+      {state.comments[msg.id]?.map((comment) => (
+        <div key={comment.id} className="bg-gray-700 rounded-lg p-3">
+          <p className="font-medium text-sm text-teal-400">{comment.username}</p>
+          <p className="text-sm text-gray-300">{comment.content}</p>
+        </div>
+      ))}
+    </div>
+    <CommentInput 
+      messageId={msg.id}
+      isPrivate={isPrivate}
+      onSubmit={postComment}
+    />
+  </div>
+)}
       </CardContent>
     </Card>
   );
