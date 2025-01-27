@@ -6,70 +6,26 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { useRouter } from 'next/navigation';
+import { MessageCircle, Send, Lock, Unlock, User, ShieldAlert } from 'lucide-react';
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
-
 export default function YapSpace() {
-  const [messages, setMessages] = useState([]);
-  const [privateMessages, setPrivateMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [username, setUsername] = useState('');
-  const [isPrivate, setIsPrivate] = useState(false);
-  const [adminPassword, setAdminPassword] = useState('');
-  const [comments, setComments] = useState({});
-  const [newComments, setNewComments] = useState({});
-  const [showPrivate, setShowPrivate] = useState(false);
-
-  useEffect(() => {
-    fetchMessages();
-
-    const channel = supabase
-      .channel('realtime-messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-        setMessages((prev) => [payload.new, ...prev]);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  async function fetchMessages() {
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) console.error(error);
-    else setMessages(data);
-
-    for (const message of data) {
-      await fetchComments(message.id);
-    }
-  }
-
-  async function fetchPrivateMessages() {
-    if (adminPassword !== 'admin123') {
-      alert('Invalid admin password.');
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from('private_messages')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) console.error(error);
-    else setPrivateMessages(data);
-
-    for (const message of data) {
-      await fetchComments(message.id, true);
-    }
-  }
+  const [state, setState] = useState({
+    messages: [],
+    privateMessages: [],
+    newMessage: '',
+    username: '',
+    isPrivate: false,
+    comments: {},
+    newComments: {},
+    showPrivate: false,
+    showCommentInput: {},
+    adminMode: false,
+    adminPassword: ''
+  });
 
   async function fetchComments(messageId, isPrivate = false) {
     const table = isPrivate ? 'private_comments' : 'comments';
@@ -80,171 +36,261 @@ export default function YapSpace() {
       .order('created_at', { ascending: true });
 
     if (error) console.error(error);
-    else setComments((prev) => ({ ...prev, [messageId]: data }));
+    else setState(prev => ({ ...prev, comments: { ...prev.comments, [messageId]: data } }));
   }
 
   async function postMessage() {
-    if (!newMessage.trim()) return;
+    if (!state.newMessage.trim()) return;
 
-    const table = isPrivate ? 'private_messages' : 'messages';
+    const table = state.isPrivate ? 'private_messages' : 'messages';
     const { error } = await supabase.from(table).insert({
-      username: username || 'Anonymous',
-      content: newMessage.trim(),
+      username: state.username || 'Anonymous',
+      content: state.newMessage.trim(),
     });
 
-    if (error) console.error(error);
-    setNewMessage('');
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    setState(prev => ({ ...prev, newMessage: '' }));
+    if (!state.isPrivate) await fetchMessages();
+    else await fetchUserPrivateMessages();
   }
 
   async function postComment(messageId, isPrivate = false) {
-    if (!newComments[messageId]?.trim()) return;
+    if (!state.newComments[messageId]?.trim()) return;
 
     const table = isPrivate ? 'private_comments' : 'comments';
     const { error } = await supabase.from(table).insert({
       message_id: messageId,
-      username: username || 'Anonymous',
-      content: newComments[messageId].trim(),
+      username: state.username || 'Anonymous',
+      content: state.newComments[messageId].trim(),
     });
 
     if (error) console.error(error);
     else await fetchComments(messageId, isPrivate);
 
-    setNewComments((prev) => ({ ...prev, [messageId]: '' }));
+    setState(prev => ({
+      ...prev,
+      newComments: { ...prev.newComments, [messageId]: '' },
+      showCommentInput: { ...prev.showCommentInput, [messageId]: false }
+    }));
+  }
+
+  async function fetchMessages() {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) console.error(error);
+    else setState(prev => ({ ...prev, messages: data }));
+
+    for (const message of data || []) {
+      await fetchComments(message.id);
+    }
+  }
+
+  async function fetchAllPrivateMessages() {
+    const { data, error } = await supabase
+      .from('private_messages')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) console.error(error);
+    else setState(prev => ({ ...prev, privateMessages: data }));
+
+    for (const message of data || []) {
+      await fetchComments(message.id, true);
+    }
   }
 
   async function fetchUserPrivateMessages() {
     const { data, error } = await supabase
       .from('private_messages')
       .select('*')
-      .eq('username', username || 'Anonymous')
+      .eq('username', state.username || 'Anonymous')
       .order('created_at', { ascending: false });
 
     if (error) console.error(error);
-    else setPrivateMessages(data);
+    else setState(prev => ({ ...prev, privateMessages: data }));
 
-    for (const message of data) {
+    for (const message of data || []) {
       await fetchComments(message.id, true);
     }
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-teal-100 text-gray-800 p-4">
-      <div className="max-w-3xl mx-auto">
-        <h1 className="text-4xl font-bold text-center mb-6 text-teal-600">YapSpace</h1>
-        <p className="text-center text-gray-600 mb-8">
-          Share your thoughts or problems, connect with peers, or chat privately with the admin.
-        </p>
+  async function handlePrivateView() {
+    if (state.adminPassword === '123@admin') {
+      setState(prev => ({ ...prev, adminMode: true }));
+      await fetchAllPrivateMessages();
+    } else {
+      await fetchUserPrivateMessages();
+    }
+    setState(prev => ({ ...prev, showPrivate: true }));
+  }
 
-        <Card className="mb-6">
-          <CardContent>
-            <Input
-              placeholder="Your name (optional)"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="mb-2"
-            />
-            <Textarea
-              placeholder="What's on your mind?"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              className="mb-2"
-            />
-            <div className="flex items-center mb-2">
-              <input
-                type="checkbox"
-                checked={isPrivate}
-                onChange={(e) => setIsPrivate(e.target.checked)}
-                className="mr-2"
-              />
-              <label>Send privately to admin</label>
+  useEffect(() => {
+    fetchMessages();
+
+    const channel = supabase
+      .channel('realtime-messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        setState(prev => ({ ...prev, messages: [payload.new, ...prev.messages] }));
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const MessageCard = ({ msg, isPrivate }) => (
+    <Card className="mb-4 overflow-hidden bg-gray-800 border-gray-700">
+      <CardContent className="p-4">
+        <div className="flex items-start space-x-3">
+          <div className="bg-teal-900 rounded-full p-2">
+            <User className="w-4 h-4 text-teal-400" />
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-teal-400">{msg.username}</p>
+            <p className="text-gray-300 mt-1">{msg.content}</p>
+            <div className="flex items-center justify-between mt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-400 hover:text-teal-400"
+                onClick={() => setState(prev => ({
+                  ...prev,
+                  showCommentInput: { 
+                    ...prev.showCommentInput,
+                    [msg.id]: !prev.showCommentInput[msg.id]
+                  }
+                }))}
+              >
+                <MessageCircle className="w-4 h-4 mr-1" />
+                {state.comments[msg.id]?.length || 0} Comments
+              </Button>
+              <span className="text-xs text-gray-500">
+                {new Date(msg.created_at).toLocaleString()}
+              </span>
             </div>
-            <Button onClick={postMessage} className="w-full bg-teal-500 hover:bg-teal-600">
-              {isPrivate ? 'Send to Admin' : 'Post Publicly'}
+          </div>
+        </div>
+
+        {state.showCommentInput[msg.id] && (
+          <div className="mt-4 pl-12">
+            <div className="space-y-2">
+              {state.comments[msg.id]?.map((comment) => (
+                <div key={comment.id} className="bg-gray-700 rounded-lg p-3">
+                  <p className="font-medium text-sm text-teal-400">{comment.username}</p>
+                  <p className="text-sm text-gray-300">{comment.content}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex space-x-2">
+              <Input
+                placeholder="Write a comment..."
+                value={state.newComments[msg.id] || ''}
+                onChange={(e) => setState(prev => ({
+                  ...prev,
+                  newComments: { ...prev.newComments, [msg.id]: e.target.value }
+                }))}
+                className="flex-1 bg-gray-700 border-gray-600 text-gray-200"
+              />
+              <Button
+                onClick={() => postComment(msg.id, isPrivate)}
+                size="sm"
+                className="bg-teal-600 hover:bg-teal-700"
+              >
+                <Send className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-gray-100 p-4">
+      <div className="max-w-2xl mx-auto">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-teal-400 mb-2">YapSpace</h1>
+          <p className="text-gray-400">Connect, share, and engage with your community</p>
+        </div>
+
+        <Card className="mb-6 bg-gray-800 border-gray-700">
+          <CardContent className="p-4 space-y-4">
+            <div className="flex space-x-2">
+              <Input
+                placeholder="Your name"
+                value={state.username}
+                onChange={(e) => setState(prev => ({ ...prev, username: e.target.value }))}
+                className="flex-1 bg-gray-700 border-gray-600 text-gray-200"
+              />
+              {state.showPrivate && !state.adminMode && (
+                <Input
+                  type="password"
+                  placeholder="Admin password"
+                  value={state.adminPassword}
+                  onChange={(e) => setState(prev => ({ ...prev, adminPassword: e.target.value }))}
+                  className="flex-1 bg-gray-700 border-gray-600 text-gray-200"
+                />
+              )}
+              <Button
+                onClick={() => setState(prev => ({ ...prev, isPrivate: !prev.isPrivate }))}
+                variant="outline"
+                className={state.isPrivate ? "text-teal-400 border-gray-600" : "text-gray-400 border-gray-600"}
+              >
+                {state.isPrivate ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+              </Button>
+            </div>
+
+            <Textarea
+              placeholder={state.isPrivate ? "Send a private message..." : "Share your thoughts..."}
+              value={state.newMessage}
+              onChange={(e) => setState(prev => ({ ...prev, newMessage: e.target.value }))}
+              className="min-h-[100px] bg-gray-700 border-gray-600 text-gray-200"
+            />
+
+            <Button 
+              onClick={postMessage} 
+              className="w-full bg-teal-600 hover:bg-teal-700"
+            >
+              <Send className="w-4 h-4 mr-2" />
+              {state.isPrivate ? 'Send Private Message' : 'Post Publicly'}
             </Button>
           </CardContent>
         </Card>
 
         <div className="mb-6">
           <Button
-            onClick={() => {
-              if (isPrivate) fetchUserPrivateMessages();
-              setShowPrivate((prev) => !prev);
-            }}
-            className="w-full bg-teal-500 hover:bg-teal-600"
+            onClick={handlePrivateView}
+            variant="outline"
+            className="w-full border-gray-600 text-gray-200 hover:bg-gray-700"
           >
-            {showPrivate ? 'View Public Posts' : 'View Private Posts'}
+            {state.showPrivate ? <Unlock className="w-4 h-4 mr-2" /> : <Lock className="w-4 h-4 mr-2" />}
+            {state.showPrivate ? 'View Public Posts' : 'View Private Messages'}
+            {state.adminMode && <ShieldAlert className="w-4 h-4 ml-2 text-teal-400" />}
           </Button>
         </div>
 
-        {!showPrivate &&
-          messages.map((msg) => (
-            <Card key={msg.id} className="mb-4">
-              <CardContent>
-                <p className="text-sm text-gray-500">
-                  <strong>{msg.username}:</strong> {msg.content}
-                </p>
-                <p className="text-xs text-gray-400 text-right">{new Date(msg.created_at).toLocaleString()}</p>
+        {state.showPrivate && state.privateMessages.length === 0 && (
+          <Alert className="bg-gray-800 border-gray-700">
+            <AlertDescription className="text-gray-300">
+              No private messages found. Start a private conversation by enabling the lock icon when posting.
+            </AlertDescription>
+          </Alert>
+        )}
 
-                <div className="mt-4">
-                  <Textarea
-                    placeholder="Add a comment"
-                    value={newComments[msg.id] || ''}
-                    onChange={(e) => setNewComments((prev) => ({ ...prev, [msg.id]: e.target.value }))}
-                    className="mb-2"
-                  />
-                  <Button
-                    onClick={() => postComment(msg.id)}
-                    className="bg-teal-500 hover:bg-teal-600"
-                  >
-                    Comment
-                  </Button>
-                </div>
-
-                <div className="mt-4">
-                  {comments[msg.id]?.map((comment) => (
-                    <div key={comment.id} className="border-t pt-2 text-sm text-gray-600">
-                      <strong>{comment.username}:</strong> {comment.content}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-
-        {showPrivate &&
-          privateMessages.map((msg) => (
-            <Card key={msg.id} className="mb-4">
-              <CardContent>
-                <p className="text-sm text-gray-500">
-                  <strong>{msg.username}:</strong> {msg.content}
-                </p>
-                <p className="text-xs text-gray-400 text-right">{new Date(msg.created_at).toLocaleString()}</p>
-
-                <div className="mt-4">
-                  <Textarea
-                    placeholder="Reply to this message"
-                    value={newComments[msg.id] || ''}
-                    onChange={(e) => setNewComments((prev) => ({ ...prev, [msg.id]: e.target.value }))}
-                    className="mb-2"
-                  />
-                  <Button
-                    onClick={() => postComment(msg.id, true)}
-                    className="bg-teal-500 hover:bg-teal-600"
-                  >
-                    Reply
-                  </Button>
-                </div>
-
-                <div className="mt-4">
-                  {comments[msg.id]?.map((comment) => (
-                    <div key={comment.id} className="border-t pt-2 text-sm text-gray-600">
-                      <strong>{comment.username}:</strong> {comment.content}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="space-y-4">
+          {!state.showPrivate
+            ? state.messages.map((msg) => <MessageCard key={msg.id} msg={msg} isPrivate={false} />)
+            : state.privateMessages.map((msg) => <MessageCard key={msg.id} msg={msg} isPrivate={true} />)
+          }
+        </div>
       </div>
     </div>
   );
