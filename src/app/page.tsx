@@ -232,7 +232,7 @@ export default function YapSpace() {
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-teal-400 mb-2">YapSpace</h1>
-          <p className="text-gray-400">Connect, share, and engage with your community</p>
+          <p className="text-gray-400">YapSpace 💬🔥—your go-to for venting, ranting, and spilling tea 🫖. Bad vibes? Work drama? Flop era? 💀 No cap, no judgment—just real talk and good vibes. Yap it out, bestie. ✨👑</p>
         </div>
 
         <Card className="mb-6 bg-gray-800 border-gray-700">
